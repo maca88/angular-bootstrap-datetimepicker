@@ -35,18 +35,33 @@
             },
             require: "?ngModel",
             compile: function (tElm, tAttrs) {
-                var isInput = tElm.is('input'), dtInstance = null, ignoreAttrs = ['ngModel', 'bsSettings', 'bsIcon', 'bsClearIcon', 'bsDateTimePicker'], dtElem = isInput ? tElm : angular.element('div.input-group', tElm), input = isInput ? tElm : angular.element('input', tElm);
+                var isInput = tElm.is('input'), dtInstance = null, ignoreAttrs = ['ngModel', 'bsSettings', 'bsIcon', 'bsClearIcon', 'bsDateTimePicker'], settings = {}, dtElem = isInput ? tElm : angular.element('div.input-group', tElm), input = isInput ? tElm : angular.element('input', tElm), key, propVal;
 
                 if (!isInput) {
-                    for (var key in tAttrs) {
-                        if (!key || key[0] == '$' || ignoreAttrs.indexOf(key) >= 0)
+                    for (key in tAttrs) {
+                        if (!key || key[0] == '$' || ignoreAttrs.indexOf(key) >= 0 || key.indexOf('dp') === 0)
                             continue;
                         input.attr(key, tAttrs[key]);
                     }
                 }
 
                 return function (scope, elm, attrs, controller) {
-                    var settings = attrs.bsSettings ? scope.$eval(attrs.bsSettings) : (attrs.bsDateTimePicker ? scope.$eval(attrs.bsDateTimePicker) : {});
+                    settings = angular.extend({}, attrs.bsSettings ? scope.$eval(attrs.bsSettings) : (attrs.bsDateTimePicker ? scope.$eval(attrs.bsDateTimePicker) : {}), settings);
+
+                    for (key in tAttrs) {
+                        if (!key || key.indexOf('dp') !== 0 || key.length < 3)
+                            continue;
+                        propVal = tAttrs[key];
+                        key = key.substring(2);
+                        key = key[0].toLowerCase() + key.slice(1); //lower the first letter
+                        if (propVal.toUpperCase() == 'TRUE')
+                            propVal = true;
+                        else if (propVal.toUpperCase() == 'FALSE')
+                            propVal = false;
+                        else if (propVal.length && (propVal[0] == '{' || propVal[0] == '['))
+                            propVal = scope.$eval(propVal);
+                        settings[key] = propVal;
+                    }
 
                     var setDate = function () {
                         if (dtInstance)
