@@ -35,50 +35,32 @@
             },
             require: "?ngModel",
             compile: function (tElm, tAttrs) {
-                var isInput = tElm.is('input'), dtInstance = null, ignoreAttrs = ['ngModel', 'bsSettings', 'bsIcon', 'bsClearIcon', 'bsDateTimePicker'], settings = {}, dtElem = isInput ? tElm : angular.element('div.input-group', tElm), input = isInput ? tElm : angular.element('input', tElm), key, propVal;
+                var isInput = tElm.is('input'), dtInstance = null, ignoreAttrs = ['ngModel', 'bsSettings', 'bsIcon', 'bsClearIcon', 'bsDateTimePicker'], tInput = isInput ? tElm : angular.element('input', tElm), key, propVal, momentDate;
 
                 if (!isInput) {
                     for (key in tAttrs) {
                         if (!key || key[0] == '$' || ignoreAttrs.indexOf(key) >= 0 || key.indexOf('dp') === 0)
                             continue;
-                        input.attr(key, tAttrs[key]);
+                        tInput.attr(key, tAttrs[key]);
                     }
                 }
 
-                return function (scope, elm, attrs, controller) {
-                    settings = angular.extend({}, attrs.bsSettings ? scope.$eval(attrs.bsSettings) : (attrs.bsDateTimePicker ? scope.$eval(attrs.bsDateTimePicker) : {}), settings);
+                return {
+                    pre: function (scope, elm, attrs, controller) {
+                        var dtElem = isInput ? elm : angular.element('div.input-group', elm), input = isInput ? elm : angular.element('input', elm);
 
-                    for (key in tAttrs) {
-                        if (!key || key.indexOf('dp') !== 0 || key.length < 3)
-                            continue;
-                        propVal = tAttrs[key];
-                        key = key.substring(2);
-                        key = key[0].toLowerCase() + key.slice(1); //lower the first letter
-                        if (propVal.toUpperCase() == 'TRUE')
-                            propVal = true;
-                        else if (propVal.toUpperCase() == 'FALSE')
-                            propVal = false;
-                        else if (propVal.length && (propVal[0] == '{' || propVal[0] == '['))
-                            propVal = scope.$eval(propVal);
-                        settings[key] = propVal;
-                    }
+                        dtElem.on('change', function (e) {
+                            e.stopImmediatePropagation();
+                        });
 
-                    var setDate = function () {
-                        if (dtInstance)
-                            dtInstance.setDate(controller.$viewValue !== undefined ? controller.$viewValue : null);
-                    };
+                        if (!controller)
+                            return;
 
-                    if (controller) {
-                        // Watch the model for programmatic changes
-                        scope.$watch(tAttrs.ngModel, function (current, old) {
-                            if (current === undefined)
-                                return;
-                            if (current === old) {
-                                return;
-                            }
-                            controller.$render();
-                        }, true);
-                        controller.$render = setDate;
+                        // Update valid and dirty statuses
+                        controller.$parsers.push(function (value) {
+                            input.toggleClass('ng-invalid', !controller.$valid).toggleClass('ng-valid', controller.$valid).toggleClass('ng-invalid-required', !controller.$valid).toggleClass('ng-valid-required', controller.$valid).toggleClass('ng-dirty', controller.$dirty).toggleClass('ng-pristine', controller.$pristine);
+                            return value;
+                        });
 
                         dtElem.on('dp.change', function (e) {
                             e.stopImmediatePropagation(); //isolate
@@ -87,70 +69,83 @@
                                 return;
                             }
                             scope.$apply(function () {
-                                controller.$setViewValue(e.date);
+                                controller.$setViewValue(momentDate ? e.date : e.date.toDate());
                             });
                         });
+                    },
+                    post: function (scope, elm, attrs, controller) {
+                        var settings = attrs.bsSettings ? scope.$eval(attrs.bsSettings) : (attrs.bsDateTimePicker ? scope.$eval(attrs.bsDateTimePicker) : {}), dtElem = isInput ? elm : angular.element('div.input-group', elm);
 
-                        // Update valid and dirty statuses
-                        controller.$parsers.push(function (value) {
-                            input.toggleClass('ng-invalid', !controller.$valid).toggleClass('ng-valid', controller.$valid).toggleClass('ng-invalid-required', !controller.$valid).toggleClass('ng-valid-required', controller.$valid).toggleClass('ng-dirty', controller.$dirty).toggleClass('ng-pristine', controller.$pristine);
-                            return value;
+                        if (controller) {
+                            controller.$render = function () {
+                                if (dtInstance)
+                                    dtInstance.setValue(controller.$viewValue !== undefined ? controller.$viewValue : null);
+                            };
+
+                            // Watch the model for programmatic changes
+                            scope.$watch(tAttrs.ngModel, function (current, old) {
+                                if (current === undefined)
+                                    return;
+                                momentDate = current && current._isAMomentObject === true;
+
+                                controller.$render();
+                            });
+                        }
+
+                        for (key in tAttrs) {
+                            if (!key || key.indexOf('dp') !== 0 || key.length < 3)
+                                continue;
+                            propVal = tAttrs[key];
+                            key = key.substring(2);
+                            key = key[0].toLowerCase() + key.slice(1); //lower the first letter
+                            if (propVal.toUpperCase() == 'TRUE')
+                                propVal = true;
+                            else if (propVal.toUpperCase() == 'FALSE')
+                                propVal = false;
+                            else if (propVal.length && (propVal[0] == '{' || propVal[0] == '['))
+                                propVal = scope.$eval(propVal);
+                            settings[key] = propVal;
+                        }
+
+                        $timeout(function () {
+                            dtElem.datetimepicker(settings);
+                            dtInstance = dtElem.data("DateTimePicker");
+                            elm.on("$destroy", function () {
+                                dtInstance.destroy();
+                            });
+
+                            if (controller)
+                                controller.$render();
+
+                            attrs.$observe('disabled', function (value) {
+                                if (value !== undefined)
+                                    dtInstance.disable();
+                                else
+                                    dtInstance.enable();
+                            });
+
+                            attrs.$observe('readonly', function (value) {
+                                if (!angular.isFunction(dtInstance.readonly))
+                                    return;
+                                if (value !== undefined)
+                                    dtInstance.readonly(true);
+                                else
+                                    dtInstance.readonly(false);
+                            });
+
+                            //watch the fieldset if present
+                            var fieldset = elm.closest('fieldset');
+                            if (fieldset.length && fieldset.attr('ng-disabled')) {
+                                scope.$watch(fieldset.attr('ng-disabled'), function (newVal) {
+                                    if (newVal === undefined)
+                                        return;
+                                    newVal ? dtInstance.disable() : dtInstance.enable();
+                                });
+                            } else if (fieldset.length && fieldset.prop('disabled')) {
+                                dtInstance.disable();
+                            }
                         });
                     }
-
-                    $timeout(function () {
-                        dtElem.datetimepicker(settings);
-                        dtInstance = dtElem.data("DateTimePicker");
-
-                        //var origSetValue = dtInstance.setValue;
-                        //dtInstance.setValue = function (val) {
-                        //    var currVal = dtInstance.getDate();
-                        //    if ((!val && !currVal) || (val && currVal && val.toString() === currVal.toString()))
-                        //        return;
-                        //    origSetValue.call(this, val);
-                        //    if (val !== null) return; //clear fn will not trigger a notification so we have to do this manually
-                        //    if (scope.$$phase || scope.$root.$$phase) {
-                        //        return;
-                        //    }
-                        //    scope.$apply(() => {
-                        //        controller.$setViewValue(val);
-                        //    });
-                        //};
-                        if (controller)
-                            controller.$render();
-
-                        attrs.$observe('disabled', function (value) {
-                            if (value !== undefined)
-                                dtInstance.disable();
-                            else
-                                dtInstance.enable();
-                        });
-
-                        attrs.$observe('readonly', function (value) {
-                            if (!angular.isFunction(dtInstance.readonly))
-                                return;
-                            if (value !== undefined)
-                                dtInstance.readonly(true);
-                            else
-                                dtInstance.readonly(false);
-                        });
-
-                        scope.$on('$destroy', function () {
-                            dtInstance.destroy();
-                        });
-
-                        //watch the fieldset if present
-                        var fieldset = elm.closest('fieldset');
-                        if (fieldset.length && fieldset.attr('ng-disabled')) {
-                            scope.$watch(fieldset.attr('ng-disabled'), function (newVal) {
-                                if (newVal === undefined)
-                                    return;
-                                newVal ? dtInstance.disable() : dtInstance.enable();
-                            });
-                        } else if (fieldset.length && fieldset.prop('disabled')) {
-                            dtInstance.disable();
-                        }
-                    });
                 };
             }
         };
